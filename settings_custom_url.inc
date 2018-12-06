@@ -15,24 +15,10 @@
  * Forces absolute paths for domains when needed.
  */
 function domain_url_outbound_alter(&$path, &$options, $original_path) {
-  $cache = &drupal_static(__FUNCTION__, []);
-  $shutdown_function_registered = &drupal_static(__FUNCTION__ . '_shutdown_registered', FALSE);
   $_domain = domain_get_domain();
 
   // If the domain_id is not set, then the Domain module is not active, and we cannot run this function.
   if (!isset($_domain['domain_id'])) {
-    return;
-  }
-
-  // Cache key is composed of the current domain and function parameters.
-  $cid = md5($_domain['domain_id'] . ":" . serialize($options) . ":" . $original_path);
-  if (empty($cache) && $cache_entry = cache_get('domain_url_outbound')) {
-    $cache = $cache_entry->data;
-  }
-  if (!empty($cache[$cid])) {
-    $entry = $cache[$cid];
-    $path = $entry['path'];
-    $options = $entry['options'];
     return;
   }
 
@@ -149,23 +135,4 @@ function domain_url_outbound_alter(&$path, &$options, $original_path) {
   if ($path_rewrite > 0 && $path != '') {
     domain_path($target_domain_id, $path, $options, $original_path);
   }
-
-  // Save the altered values into the static cache.
-  $cache[$cid] = [
-    'path' => $path,
-    'options' => $options,
-  ];
-  if (!$shutdown_function_registered) {
-    $shutdown_function_registered = TRUE;
-    drupal_register_shutdown_function('_domain_url_outbound_alter_shutdown');
-  }
-}
-
-/**
- * Shutdown function that save the outbound url static cache into the permanent
- * cache.
- */
-function _domain_url_outbound_alter_shutdown() {
-  $outbound_urls = &drupal_static('domain_url_outbound_alter');
-  cache_set('domain_url_outbound', $outbound_urls);
 }
