@@ -5,3 +5,4 @@ core = 7.x
 configure = admin/structure/domain/settings
 files[] = domain.migrate.inc
 files[] = tests/domain.test
+files[] = domain.access.inc

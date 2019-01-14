@@ -52,6 +52,8 @@ function domain_schema() {
       'nid' => array('node' => 'nid'),
     ),
   );
+  $schema['cache_domain_access'] = drupal_get_schema_unprocessed('system', 'cache');
+  $schema['cache_domain_access']['description'] = 'Cache table for domain_access.';
   $schema['domain_editor'] = array(
     'description' => 'Stores domain information for each user',
     'fields' => array(
@@ -450,4 +452,17 @@ function domain_update_7311(&$sandbox) {
  */
 function domain_update_7312(&$sandbox) {
   variable_del('domain_form_elements');
+}
+
+/**
+ * Create the cache_domain_access table.
+ */
+function domain_update_7313(&$sandbox) {
+  if (db_table_exists('cache_domain_access')) {
+    return t('{cache_domain_access} table exists.');
+  }
+  $schema = drupal_get_schema_unprocessed('system', 'cache');
+  $schema['description'] = 'Cache table for domain_access.';
+  db_create_table('cache_domain_access', $schema);
+  return t('{cache_domain_access} table created.');
 }
