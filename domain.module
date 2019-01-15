@@ -1026,10 +1026,8 @@ function domain_delete($domain, $values = array()) {
   module_invoke_all('domain_delete', $domain, $values);
 
   // Remove domain-specific entries from tables and clear the cache.
-  db_delete('domain_access')
-    ->condition('gid', $domain['domain_id'])
-    ->condition('realm', 'domain_id')
-    ->execute();
+  $domain_access_class = variable_get('domain_access_class', 'DomainAccess');
+  $domain_access_class::deleteDomain($domain['domain_id']);
   db_delete('domain_editor')
     ->condition('domain_id', $domain['domain_id'])
     ->execute();
@@ -1785,9 +1783,8 @@ function domain_node_view($node, $view_mode) {
  * Implements hook_node_delete().
  */
 function domain_node_delete($node) {
-  db_delete('domain_access')
-    ->condition('nid', $node->nid)
-    ->execute();
+  $domain_access_class = variable_get('domain_access_class', 'DomainAccess');
+  $domain_access_class::deleteNode($node->nid);
 }
 
 /**
@@ -1870,7 +1867,8 @@ function domain_get_node_match($nid) {
   }
   // Load the domain data for this node -- but only take the first match.
   //$id = db_query("SELECT gid FROM {domain_access} WHERE nid = :nid AND realm = :realm ORDER BY gid", array(':nid' => $nid, ':realm' => 'domain_id'))->fetchField();
-  $id = DomainAccess::getGidByNidAndRealm($nid, 'domain_id');
+  $domain_access_class = variable_get('domain_acccess_class', 'DomainAccess');
+  $id = $domain_access_class::getGidByNidAndRealm($nid, 'domain_id');
 
   // If a match was found, return it. Otherwise, we may be saving a node
   // in which case, let it fall through. See http://drupal.org/node/624360.
@@ -1993,7 +1991,8 @@ function domain_get_node_domains($nodes) {
   $domains = array('domain_id' => array(), 'domain_site' => FALSE);
   $records = array();
   //$result = db_query("SELECT nid, gid, realm FROM {domain_access} WHERE nid IN (:nid)", array(':nid' => array_keys($node_ids)));
-  $result = DomainAccess::getDataForNids(array_keys($node_ids));
+  $domain_access_class = variable_get('domain_access_class', 'DomainAccess');
+  $result = $domain_access_class::getDataForNids(array_keys($node_ids));
   // While this should return records for every node, we cannot guarantee success.
   foreach ($result as $data) {
     if ($data->realm == 'domain_id') {
@@ -2205,9 +2204,8 @@ function domain_node_access_records($node) {
 function _domain_store_grants($nid, $grants = array()) {
   // Store the grants records.
   if ($nid > 0 && !empty($grants)) {
-    db_delete('domain_access')
-      ->condition('nid', $nid)
-      ->execute();
+    $domain_access_class = variable_get('domain_access_class', 'DomainAccess');
+    $domain_access_class::deleteNode($nid);
     $values = array();
     foreach ($grants as $grant) {
       // Always store unpublished nodes under domain_id.
@@ -2220,11 +2218,7 @@ function _domain_store_grants($nid, $grants = array()) {
         'realm' => $grant['realm'],
       );
     }
-    $query = db_insert('domain_access')->fields(array('nid', 'gid', 'realm'));
-    foreach ($values as $record) {
-      $query->values($record);
-    }
-    $query->execute();
+    $domain_access_class::insertValues($values);
   }
 
   // Reset the node-related domain static variables.
@@ -2413,11 +2407,8 @@ function domain_enable() {
         );
       }
     }
-    $query = db_insert('domain_access')->fields(array('nid', 'gid', 'realm'));
-    foreach ($values as $record) {
-      $query->values($record);
-    }
-    $query->execute();
+    $domain_access_class = variable_get('domain_access_class', 'DomainAccess');
+    $domain_access_class::insertValues($values);
   }
   // Add users to the {domain_editor} table, but skip user 0.
   if (!DOMAIN_ASSIGN_USERS) {
@@ -3696,16 +3687,8 @@ function domain_reassign($old_domain, $new_domain, $table) {
   $old_id = $old_domain['domain_id'];
   $new_id = $new_domain['domain_id'];
   if ($table == 'domain_access') {
-    $nids = db_query("SELECT nid FROM {domain_access} WHERE realm = 'domain_id' AND gid = :domain_id", array(':domain_id' => $new_id))->fetchAllAssoc('nid');
-    $query = db_update('domain_access')
-      ->condition('gid', $old_id)
-      ->condition('realm', 'domain_id')
-      ->fields(array('gid' => $new_id));
-    // We cannot update using a subquery, so be sure to exclude duplicates.
-    if (!empty($nids)) {
-      $query->condition('nid', array_keys($nids), 'NOT IN');
-    }
-    $query->execute();
+    $domain_access_class = variable_get('domain_access_class', 'DomainAccess');
+    $domain_access_class::reassignDomain($old_id, $new_id);
   }
   elseif ($table == 'domain_editor') {
     $uids = db_query("SELECT uid FROM {domain_editor} WHERE domain_id = :domain_id", array(':domain_id' => $new_id))->fetchAllAssoc('uid');

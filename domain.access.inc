@@ -1,8 +1,112 @@
 <?php
 
-class DomainAccess {
+/**
+ * Basic implementation for accessing the domain access data.
+ */
+class DomainAccess implements DomainAccessInterface {
 
-  public static function updateCache($nid) {
+  /**
+   * {@inheritdoc}
+   */
+  public static function checkRuleExists($nid, $gid, $realm) {
+    $data = static::getByNid($nid);
+    $exists = array_filter($data, function($item) use ($gid, $realm) {
+      return $item['gid'] == $gid && $item['realm'] == $realm;
+    });
+    return !empty($exists);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getGidByNidAndRealm($nid, $realm) {
+    $data = static::getByNid($nid);
+    $gid = FALSE;
+    if (!empty($data)) {
+      $gid = array_reduce($data, function($carry, $item) use ($realm) {
+        if ($item['realm'] == $realm) {
+          return $item['gid'];
+        }
+        return $carry;
+      }, FALSE);
+    }
+    return $gid;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getDataForNids($nids) {
+    $results = array();
+    foreach ($nids as $nid) {
+      $data = static::getByNid($nid);
+      if (!empty($data)) {
+        $results = array_merge($results, array_map(function($item) use ($nid) {
+          return (object) array(
+            'nid' => $nid,
+            'gid' => $item['gid'],
+            'realm' => $item['realm'],
+          );
+        }, $data));
+      }
+    }
+    return $results;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function reassignDomain($old_domain_id, $new_domain_id) {
+    $nids = db_query("SELECT nid FROM {domain_access} WHERE realm = 'domain_id' AND gid = :domain_id", array(':domain_id' => $new_domain_id))->fetchAllAssoc('nid');
+    $query = db_update('domain_access')
+      ->condition('gid', $old_domain_id)
+      ->condition('realm', 'domain_id')
+      ->fields(array('gid' => $new_domain_id));
+    // We cannot update using a subquery, so be sure to exclude duplicates.
+    if (!empty($nids)) {
+      $query->condition('nid', array_keys($nids), 'NOT IN');
+    }
+    $query->execute();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function deleteDomain($domain_id) {
+    db_delete('domain_access')
+      ->condition('gid', $domain_id)
+      ->condition('realm', 'domain_id')
+      ->execute();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function deleteNode($nid) {
+    db_delete('domain_access')
+      ->condition('nid', $nid)
+      ->execute();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function insertValues($values) {
+    $query = db_insert('domain_access')->fields(array('nid', 'gid', 'realm'));
+    foreach ($values as $record) {
+      $query->values($record);
+    }
+    $query->execute();
+  }
+
+  /**
+   * Loads the domain access data for a node id.
+   *
+   * @param int $nid
+   *  The node id.
+   * @return array
+   */
+  protected static function getByNid($nid) {
     $results = db_query('SELECT da.nid, da.gid, da.realm from {domain_access} da WHERE da.nid = :nid', array(':nid' => $nid), array('fetch' => PDO::FETCH_ASSOC));
     $data = array();
     foreach ($results as $result) {
@@ -11,62 +115,6 @@ class DomainAccess {
         'realm' => $result['realm'],
       );
     }
-    cache_set($nid, $data, 'cache_domain_access');
-  }
-
-  public static function getByNid($nid, $is_recursive = FALSE) {
-    if ($cache = cache_get($nid, 'cache_domain_access')) {
-      return $cache->data;
-    }
-    if ($is_recursive) {
-      return array();
-    }
-    self::updateCache($nid);
-    return self::getByNid($nid, TRUE);
-  }
-
-  public static function checkRuleExists($nid, $gid, $realm) {
-    // Used for queries:
-    // - db_query("SELECT COUNT(nid) FROM {domain_access} WHERE nid = :nid AND gid = 0 AND realm = :realm", array(':nid' => $nid, ':realm' => 'domain_site'))->fetchField()
-
-    $data = self::getByNid($nid);
-    $exists = array_filter($data, function($item) use ($gid, $realm){
-      return $item['gid'] == $gid && $item['realm'] == $realm;
-    });
-    return !empty($exists);
-  }
-
-  public static function getGidByNidAndRealm($nid, $realm) {
-    // Used for queries like:
-    // - $id = db_query("SELECT gid FROM {domain_access} WHERE nid = :nid AND realm = :realm ORDER BY gid", array(':nid' => $nid, ':realm' => 'domain_id'))->fetchField();
-    $data = self::getByNid($nid);
-    $gid = FALSE;
-    if (!empty($data)) {
-      foreach ($data as $item) {
-        if ($item['realm'] == $realm) {
-          return $item['gid'];
-        }
-      }
-    }
-    return $gid;
-  }
-
-  public static function getDataForNids($nids) {
-    // Used for queries like:
-    // - db_query("SELECT nid, gid, realm FROM {domain_access} WHERE nid IN (:nid)", array(':nid' => array_keys($node_ids)));
-    $results = array();
-    foreach ($nids as $nid) {
-      $data = self::getByNid($nid);
-      if (!empty($data)) {
-        foreach ($data as $value) {
-          $results[] = (object)array(
-            'nid' => $nid,
-            'gid' => $value['gid'],
-            'realm' => $value['realm'],
-          );
-        }
-      }
-    }
-    return $results;
+    return $data;
   }
 }
